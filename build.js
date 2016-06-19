@@ -7,6 +7,10 @@ require("whatwg-fetch");
 
 require("dom4");
 
+var _loglevel = require("loglevel");
+
+var _loglevel2 = _interopRequireDefault(_loglevel);
+
 var _game = require("./src/game");
 
 var _game2 = _interopRequireDefault(_game);
@@ -17,12 +21,14 @@ var _renderer2 = _interopRequireDefault(_renderer);
 
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
+System.global.log = _loglevel2.default;
+
 var game = new _game2.default();
 var renderer = new _renderer2.default();
 
 game.run(renderer.render.bind(renderer));
 
-},{"./src/game":393,"./src/renderer":397,"core-js":5,"dom4":312,"whatwg-fetch":385}],2:[function(require,module,exports){
+},{"./src/game":394,"./src/renderer":398,"core-js":5,"dom4":312,"loglevel":314,"whatwg-fetch":386}],2:[function(require,module,exports){
 (function (global, factory) {
   if (typeof define === "function" && define.amd) {
     define('@most/create', ['exports', 'most', '@most/multicast'], factory);
@@ -277,7 +283,7 @@ game.run(renderer.render.bind(renderer));
   exports.default = index;
 });
 
-},{"@most/multicast":3,"most":380}],3:[function(require,module,exports){
+},{"@most/multicast":3,"most":381}],3:[function(require,module,exports){
 (function (global, factory) {
   if (typeof define === "function" && define.amd) {
     define('@most/multicast', ['exports', '@most/prelude'], factory);
@@ -8347,6 +8353,231 @@ function isUndefined(arg) {
 }
 
 },{}],314:[function(require,module,exports){
+/*
+* loglevel - https://github.com/pimterry/loglevel
+*
+* Copyright (c) 2013 Tim Perry
+* Licensed under the MIT license.
+*/
+(function (root, definition) {
+    "use strict";
+    if (typeof define === 'function' && define.amd) {
+        define(definition);
+    } else if (typeof module === 'object' && module.exports) {
+        module.exports = definition();
+    } else {
+        root.log = definition();
+    }
+}(this, function () {
+    "use strict";
+    var noop = function() {};
+    var undefinedType = "undefined";
+
+    function realMethod(methodName) {
+        if (typeof console === undefinedType) {
+            return false; // We can't build a real method without a console to log to
+        } else if (console[methodName] !== undefined) {
+            return bindMethod(console, methodName);
+        } else if (console.log !== undefined) {
+            return bindMethod(console, 'log');
+        } else {
+            return noop;
+        }
+    }
+
+    function bindMethod(obj, methodName) {
+        var method = obj[methodName];
+        if (typeof method.bind === 'function') {
+            return method.bind(obj);
+        } else {
+            try {
+                return Function.prototype.bind.call(method, obj);
+            } catch (e) {
+                // Missing bind shim or IE8 + Modernizr, fallback to wrapping
+                return function() {
+                    return Function.prototype.apply.apply(method, [obj, arguments]);
+                };
+            }
+        }
+    }
+
+    // these private functions always need `this` to be set properly
+
+    function enableLoggingWhenConsoleArrives(methodName, level, loggerName) {
+        return function () {
+            if (typeof console !== undefinedType) {
+                replaceLoggingMethods.call(this, level, loggerName);
+                this[methodName].apply(this, arguments);
+            }
+        };
+    }
+
+    function replaceLoggingMethods(level, loggerName) {
+        /*jshint validthis:true */
+        for (var i = 0; i < logMethods.length; i++) {
+            var methodName = logMethods[i];
+            this[methodName] = (i < level) ?
+                noop :
+                this.methodFactory(methodName, level, loggerName);
+        }
+    }
+
+    function defaultMethodFactory(methodName, level, loggerName) {
+        /*jshint validthis:true */
+        return realMethod(methodName) ||
+               enableLoggingWhenConsoleArrives.apply(this, arguments);
+    }
+
+    var logMethods = [
+        "trace",
+        "debug",
+        "info",
+        "warn",
+        "error"
+    ];
+
+    function Logger(name, defaultLevel, factory) {
+      var self = this;
+      var currentLevel;
+      var storageKey = "loglevel";
+      if (name) {
+        storageKey += ":" + name;
+      }
+
+      function persistLevelIfPossible(levelNum) {
+          var levelName = (logMethods[levelNum] || 'silent').toUpperCase();
+
+          // Use localStorage if available
+          try {
+              window.localStorage[storageKey] = levelName;
+              return;
+          } catch (ignore) {}
+
+          // Use session cookie as fallback
+          try {
+              window.document.cookie =
+                encodeURIComponent(storageKey) + "=" + levelName + ";";
+          } catch (ignore) {}
+      }
+
+      function getPersistedLevel() {
+          var storedLevel;
+
+          try {
+              storedLevel = window.localStorage[storageKey];
+          } catch (ignore) {}
+
+          if (typeof storedLevel === undefinedType) {
+              try {
+                  var cookie = window.document.cookie;
+                  var location = cookie.indexOf(
+                      encodeURIComponent(storageKey) + "=");
+                  if (location) {
+                      storedLevel = /^([^;]+)/.exec(cookie.slice(location))[1];
+                  }
+              } catch (ignore) {}
+          }
+
+          // If the stored level is not valid, treat it as if nothing was stored.
+          if (self.levels[storedLevel] === undefined) {
+              storedLevel = undefined;
+          }
+
+          return storedLevel;
+      }
+
+      /*
+       *
+       * Public API
+       *
+       */
+
+      self.levels = { "TRACE": 0, "DEBUG": 1, "INFO": 2, "WARN": 3,
+          "ERROR": 4, "SILENT": 5};
+
+      self.methodFactory = factory || defaultMethodFactory;
+
+      self.getLevel = function () {
+          return currentLevel;
+      };
+
+      self.setLevel = function (level, persist) {
+          if (typeof level === "string" && self.levels[level.toUpperCase()] !== undefined) {
+              level = self.levels[level.toUpperCase()];
+          }
+          if (typeof level === "number" && level >= 0 && level <= self.levels.SILENT) {
+              currentLevel = level;
+              if (persist !== false) {  // defaults to true
+                  persistLevelIfPossible(level);
+              }
+              replaceLoggingMethods.call(self, level, name);
+              if (typeof console === undefinedType && level < self.levels.SILENT) {
+                  return "No console available for logging";
+              }
+          } else {
+              throw "log.setLevel() called with invalid level: " + level;
+          }
+      };
+
+      self.setDefaultLevel = function (level) {
+          if (!getPersistedLevel()) {
+              self.setLevel(level, false);
+          }
+      };
+
+      self.enableAll = function(persist) {
+          self.setLevel(self.levels.TRACE, persist);
+      };
+
+      self.disableAll = function(persist) {
+          self.setLevel(self.levels.SILENT, persist);
+      };
+
+      // Initialize with the right level
+      var initialLevel = getPersistedLevel();
+      if (initialLevel == null) {
+          initialLevel = defaultLevel == null ? "WARN" : defaultLevel;
+      }
+      self.setLevel(initialLevel, false);
+    }
+
+    /*
+     *
+     * Package-level API
+     *
+     */
+
+    var defaultLogger = new Logger();
+
+    var _loggersByName = {};
+    defaultLogger.getLogger = function getLogger(name) {
+        if (typeof name !== "string" || name === "") {
+          throw new TypeError("You must supply a name when creating a logger.");
+        }
+
+        var logger = _loggersByName[name];
+        if (!logger) {
+          logger = _loggersByName[name] = new Logger(
+            name, defaultLogger.getLevel(), defaultLogger.methodFactory);
+        }
+        return logger;
+    };
+
+    // Grab the current global log variable in case of overwrite
+    var _log = (typeof window !== undefinedType) ? window.log : undefined;
+    defaultLogger.noConflict = function() {
+        if (typeof window !== undefinedType &&
+               window.log === defaultLogger) {
+            window.log = _log;
+        }
+
+        return defaultLogger;
+    };
+
+    return defaultLogger;
+}));
+
+},{}],315:[function(require,module,exports){
 (function (root, factory) {
     'use strict';
 
@@ -8591,7 +8822,7 @@ function isUndefined(arg) {
     return MersenneTwister;
 }));
 
-},{}],315:[function(require,module,exports){
+},{}],316:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -8669,7 +8900,7 @@ LinkedList.prototype.dispose = function() {
 	return Promise.all(promises);
 };
 
-},{}],316:[function(require,module,exports){
+},{}],317:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -8680,7 +8911,7 @@ function isPromise(p) {
 	return p !== null && typeof p === 'object' && typeof p.then === 'function';
 }
 
-},{}],317:[function(require,module,exports){
+},{}],318:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -8747,7 +8978,7 @@ function copy(src, srcIndex, dst, dstIndex, len) {
 }
 
 
-},{}],318:[function(require,module,exports){
+},{}],319:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -8758,7 +8989,7 @@ function Stream(source) {
 	this.source = source;
 }
 
-},{}],319:[function(require,module,exports){
+},{}],320:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -8854,7 +9085,7 @@ ReduceSink.prototype.end = function(t) {
 
 function noop() {}
 
-},{"../Stream":318,"../disposable/dispose":347,"../runSource":357,"../scheduler/PropagateTask":358,"../sink/Pipe":365}],320:[function(require,module,exports){
+},{"../Stream":319,"../disposable/dispose":348,"../runSource":358,"../scheduler/PropagateTask":359,"../sink/Pipe":366}],321:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -8878,7 +9109,7 @@ function ap(fs, xs) {
 	return combine(apply, fs, xs);
 }
 
-},{"./combine":322,"@most/prelude":4}],321:[function(require,module,exports){
+},{"./combine":323,"@most/prelude":4}],322:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -8923,7 +9154,7 @@ function cycle(stream) {
 	}, stream);
 }
 
-},{"../source/core":369,"./continueWith":324}],322:[function(require,module,exports){
+},{"../source/core":370,"./continueWith":325}],323:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -9041,7 +9272,7 @@ CombineSink.prototype.end = function(t, indexedValue) {
 	}
 };
 
-},{"../Stream":318,"../disposable/dispose":347,"../invoke":352,"../sink/IndexSink":364,"../sink/Pipe":365,"../source/core":369,"./transform":342,"@most/prelude":4}],323:[function(require,module,exports){
+},{"../Stream":319,"../disposable/dispose":348,"../invoke":353,"../sink/IndexSink":365,"../sink/Pipe":366,"../source/core":370,"./transform":343,"@most/prelude":4}],324:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -9065,7 +9296,7 @@ function concatMap(f, stream) {
 	return mergeMapConcurrently(f, 1, stream);
 }
 
-},{"./mergeConcurrently":332}],324:[function(require,module,exports){
+},{"./mergeConcurrently":333}],325:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -9133,7 +9364,7 @@ ContinueWithSink.prototype.dispose = function() {
 	return this.disposable.dispose();
 };
 
-},{"../Promise":316,"../Stream":318,"../disposable/dispose":347,"../sink/Pipe":365}],325:[function(require,module,exports){
+},{"../Promise":317,"../Stream":319,"../disposable/dispose":348,"../sink/Pipe":366}],326:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -9188,7 +9419,7 @@ DelaySink.prototype.end = function(t, x) {
 
 DelaySink.prototype.error = Sink.prototype.error;
 
-},{"../Stream":318,"../disposable/dispose":347,"../scheduler/PropagateTask":358,"../sink/Pipe":365}],326:[function(require,module,exports){
+},{"../Stream":319,"../disposable/dispose":348,"../scheduler/PropagateTask":359,"../sink/Pipe":366}],327:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -9285,7 +9516,7 @@ RecoverWithSink.prototype.dispose = function() {
 	return this.disposable.dispose();
 };
 
-},{"../Promise":316,"../Stream":318,"../disposable/dispose":347,"../scheduler/PropagateTask":358,"../sink/Pipe":365,"../sink/SafeSink":366,"../source/tryEvent":378}],327:[function(require,module,exports){
+},{"../Promise":317,"../Stream":319,"../disposable/dispose":348,"../scheduler/PropagateTask":359,"../sink/Pipe":366,"../sink/SafeSink":367,"../source/tryEvent":379}],328:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -9361,7 +9592,7 @@ function same(a, b) {
 	return a === b;
 }
 
-},{"../Stream":318,"../fusion/Filter":349,"../sink/Pipe":365}],328:[function(require,module,exports){
+},{"../Stream":319,"../fusion/Filter":350,"../sink/Pipe":366}],329:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -9393,7 +9624,7 @@ function join(stream) {
 	return mergeConcurrently(Infinity, stream);
 }
 
-},{"./mergeConcurrently":332}],329:[function(require,module,exports){
+},{"./mergeConcurrently":333}],330:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -9520,7 +9751,7 @@ DebounceSink.prototype._clearTimer = function() {
 	return true;
 };
 
-},{"../Stream":318,"../disposable/dispose":347,"../fusion/Map":351,"../scheduler/PropagateTask":358,"../sink/Pipe":365}],330:[function(require,module,exports){
+},{"../Stream":319,"../disposable/dispose":348,"../fusion/Map":352,"../scheduler/PropagateTask":359,"../sink/Pipe":366}],331:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -9573,7 +9804,7 @@ LoopSink.prototype.end = function(t) {
 	this.sink.end(t, this.seed);
 };
 
-},{"../Stream":318,"../sink/Pipe":365}],331:[function(require,module,exports){
+},{"../Stream":319,"../sink/Pipe":366}],332:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -9671,7 +9902,7 @@ MergeSink.prototype.end = function(t, indexedValue) {
 	}
 };
 
-},{"../Stream":318,"../disposable/dispose":347,"../sink/IndexSink":364,"../sink/Pipe":365,"../source/core":369,"@most/prelude":4}],332:[function(require,module,exports){
+},{"../Stream":319,"../disposable/dispose":348,"../sink/IndexSink":365,"../sink/Pipe":366,"../source/core":370,"@most/prelude":4}],333:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -9801,7 +10032,7 @@ Inner.prototype.dispose = function() {
 	return this.disposable.dispose();
 };
 
-},{"../LinkedList":315,"../Stream":318,"../disposable/dispose":347,"@most/prelude":4}],333:[function(require,module,exports){
+},{"../LinkedList":316,"../Stream":319,"../disposable/dispose":348,"@most/prelude":4}],334:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -9837,7 +10068,7 @@ function drain(stream) {
 	return run(stream.source);
 }
 
-},{"../disposable/dispose":347,"../runSource":357,"../scheduler/defaultScheduler":360,"./transform":342}],334:[function(require,module,exports){
+},{"../disposable/dispose":348,"../runSource":358,"../scheduler/defaultScheduler":361,"./transform":343}],335:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -9929,7 +10160,7 @@ AwaitSink.prototype._end = function(x) {
 	return Promise.resolve(x).then(this._endBound);
 };
 
-},{"../Stream":318,"../fatalError":348,"../source/core":369}],335:[function(require,module,exports){
+},{"../Stream":319,"../fatalError":349,"../source/core":370}],336:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -10042,7 +10273,7 @@ function getValue(hold) {
 	return hold.value;
 }
 
-},{"../Stream":318,"../disposable/dispose":347,"../invoke":352,"../sink/Pipe":365,"@most/prelude":4}],336:[function(require,module,exports){
+},{"../Stream":319,"../disposable/dispose":348,"../invoke":353,"../sink/Pipe":366,"@most/prelude":4}],337:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -10223,7 +10454,7 @@ SkipWhileSink.prototype.event = function(t, x) {
 	this.sink.event(t, x);
 };
 
-},{"../Stream":318,"../disposable/dispose":347,"../fusion/Map":351,"../sink/Pipe":365,"../source/core":369}],337:[function(require,module,exports){
+},{"../Stream":319,"../disposable/dispose":348,"../fusion/Map":352,"../sink/Pipe":366,"../source/core":370}],338:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -10335,7 +10566,7 @@ Segment.prototype._dispose = function(t) {
 	dispose.tryDispose(t, this.disposable, this.sink)
 };
 
-},{"../Stream":318,"../disposable/dispose":347}],338:[function(require,module,exports){
+},{"../Stream":319,"../disposable/dispose":348}],339:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -10344,7 +10575,7 @@ exports.thru = function thru(f, stream) {
 	return f(stream);
 }
 
-},{}],339:[function(require,module,exports){
+},{}],340:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -10462,7 +10693,7 @@ UpperBound.prototype.dispose = function() {
 
 function noop() {}
 
-},{"../Stream":318,"../combinator/flatMap":328,"../disposable/dispose":347,"../sink/Pipe":365}],340:[function(require,module,exports){
+},{"../Stream":319,"../combinator/flatMap":329,"../disposable/dispose":348,"../sink/Pipe":366}],341:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -10495,7 +10726,7 @@ TimestampSink.prototype.event = function(t, x) {
 	this.sink.event(t, { time: t, value: x });
 };
 
-},{"../Stream":318,"../sink/Pipe":365}],341:[function(require,module,exports){
+},{"../Stream":319,"../sink/Pipe":366}],342:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -10620,7 +10851,7 @@ LegacyTxAdapter.prototype.getResult = function(x) {
 	return x.value;
 };
 
-},{"../Stream":318}],342:[function(require,module,exports){
+},{"../Stream":319}],343:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -10689,7 +10920,7 @@ TapSink.prototype.event = function(t, x) {
 	this.sink.event(t, x);
 }
 
-},{"../Stream":318,"../fusion/Map":351,"../sink/Pipe":365}],343:[function(require,module,exports){
+},{"../Stream":319,"../fusion/Map":352,"../sink/Pipe":366}],344:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -10824,7 +11055,7 @@ function ready(buffers) {
 	return true;
 }
 
-},{"../Queue":317,"../Stream":318,"../disposable/dispose":347,"../invoke":352,"../sink/IndexSink":364,"../sink/Pipe":365,"../source/core":369,"./transform":342,"@most/prelude":4}],344:[function(require,module,exports){
+},{"../Queue":318,"../Stream":319,"../disposable/dispose":348,"../invoke":353,"../sink/IndexSink":365,"../sink/Pipe":366,"../source/core":370,"./transform":343,"@most/prelude":4}],345:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -10843,7 +11074,7 @@ function runTask(task) {
 	}
 }
 
-},{}],345:[function(require,module,exports){
+},{}],346:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -10865,7 +11096,7 @@ Disposable.prototype.dispose = function() {
 	return this._dispose(this._data);
 };
 
-},{}],346:[function(require,module,exports){
+},{}],347:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -10909,7 +11140,7 @@ SettableDisposable.prototype.dispose = function() {
 	return this.result;
 };
 
-},{}],347:[function(require,module,exports){
+},{}],348:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -11038,7 +11269,7 @@ function memoized(disposable) {
 	return { disposed: false, disposable: disposable, value: void 0 };
 }
 
-},{"../Promise":316,"./Disposable":345,"./SettableDisposable":346,"@most/prelude":4}],348:[function(require,module,exports){
+},{"../Promise":317,"./Disposable":346,"./SettableDisposable":347,"@most/prelude":4}],349:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -11051,7 +11282,7 @@ function fatalError (e) {
 	}, 0);
 }
 
-},{}],349:[function(require,module,exports){
+},{}],350:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -11102,7 +11333,7 @@ function and(p, q) {
 	};
 }
 
-},{"../sink/Pipe":365}],350:[function(require,module,exports){
+},{"../sink/Pipe":366}],351:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -11136,7 +11367,7 @@ FilterMapSink.prototype.event = function(t, x) {
 FilterMapSink.prototype.end = Pipe.prototype.end;
 FilterMapSink.prototype.error = Pipe.prototype.error;
 
-},{"../sink/Pipe":365}],351:[function(require,module,exports){
+},{"../sink/Pipe":366}],352:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -11189,7 +11420,7 @@ MapSink.prototype.event = function(t, x) {
 	this.sink.event(t, f(x));
 };
 
-},{"../sink/Pipe":365,"./Filter":349,"./FilterMap":350,"@most/prelude":4}],352:[function(require,module,exports){
+},{"../sink/Pipe":366,"./Filter":350,"./FilterMap":351,"@most/prelude":4}],353:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -11210,7 +11441,7 @@ function invoke(f, args) {
 	}
 }
 
-},{}],353:[function(require,module,exports){
+},{}],354:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -11243,7 +11474,7 @@ function makeIterable(f, o) {
 	return o;
 }
 
-},{}],354:[function(require,module,exports){
+},{}],355:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -11295,7 +11526,7 @@ function unsubscribe(subscription) {
 	return subscription.unsubscribe();
 }
 
-},{"../Stream":318,"../disposable/dispose":347}],355:[function(require,module,exports){
+},{"../Stream":319,"../disposable/dispose":348}],356:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -11319,7 +11550,7 @@ function getObservable(o) {
 	return obs;
 }
 
-},{"symbol-observable":383}],356:[function(require,module,exports){
+},{"symbol-observable":384}],357:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -11387,7 +11618,7 @@ function doDispose(fatal, subscriber, complete, error, disposable, x) {
 	}).catch(fatal);
 }
 
-},{"../disposable/dispose":347,"../fatalError":348,"../scheduler/defaultScheduler":360}],357:[function(require,module,exports){
+},{"../disposable/dispose":348,"../fatalError":349,"../scheduler/defaultScheduler":361}],358:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -11443,7 +11674,7 @@ function disposeThen(end, error, disposable, x) {
 	}, error);
 }
 
-},{"./disposable/dispose":347,"./scheduler/defaultScheduler":360}],358:[function(require,module,exports){
+},{"./disposable/dispose":348,"./scheduler/defaultScheduler":361}],359:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -11501,7 +11732,7 @@ function end(t, x, sink) {
 	sink.end(t, x);
 }
 
-},{"../fatalError":348}],359:[function(require,module,exports){
+},{"../fatalError":349}],360:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -11725,7 +11956,7 @@ function newTimeslot(t, events) {
 	return { time: t, events: events };
 }
 
-},{"@most/prelude":4}],360:[function(require,module,exports){
+},{"@most/prelude":4}],361:[function(require,module,exports){
 (function (process){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
@@ -11741,7 +11972,7 @@ var isNode = typeof process === 'object'
 module.exports = new Scheduler(isNode ? nodeTimer : setTimeoutTimer);
 
 }).call(this,require('_process'))
-},{"./Scheduler":359,"./nodeTimer":361,"./timeoutTimer":362,"_process":381}],361:[function(require,module,exports){
+},{"./Scheduler":360,"./nodeTimer":362,"./timeoutTimer":363,"_process":382}],362:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -11787,7 +12018,7 @@ module.exports = {
 	}
 };
 
-},{"../defer":344}],362:[function(require,module,exports){
+},{"../defer":345}],363:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -11804,7 +12035,7 @@ module.exports = {
 	}
 };
 
-},{}],363:[function(require,module,exports){
+},{}],364:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -11895,7 +12126,7 @@ ErrorTask.prototype.error = function(e) {
 	throw e;
 };
 
-},{"../defer":344}],364:[function(require,module,exports){
+},{"../defer":345}],365:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -11929,7 +12160,7 @@ IndexSink.prototype.end = function(t, x) {
 
 IndexSink.prototype.error = Sink.prototype.error;
 
-},{"./Pipe":365}],365:[function(require,module,exports){
+},{"./Pipe":366}],366:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -11958,7 +12189,7 @@ Pipe.prototype.error = function(t, e) {
 	return this.sink.error(t, e);
 };
 
-},{}],366:[function(require,module,exports){
+},{}],367:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -11995,7 +12226,7 @@ SafeSink.prototype.disable = function() {
 	return this.sink;
 }
 
-},{}],367:[function(require,module,exports){
+},{}],368:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -12042,7 +12273,7 @@ function disposeEventEmitter(info) {
 	target.source.removeListener(target.event, info.addEvent);
 }
 
-},{"../disposable/dispose":347,"../sink/DeferredSink":363,"./tryEvent":378}],368:[function(require,module,exports){
+},{"../disposable/dispose":348,"../sink/DeferredSink":364,"./tryEvent":379}],369:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -12074,7 +12305,7 @@ function disposeEventTarget(info) {
 	target.source.removeEventListener(target.event, info.addEvent, target.capture);
 }
 
-},{"../disposable/dispose":347,"./tryEvent":378}],369:[function(require,module,exports){
+},{"../disposable/dispose":348,"./tryEvent":379}],370:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -12148,7 +12379,7 @@ NeverSource.prototype.run = function() {
 
 var NEVER = new Stream(new NeverSource());
 
-},{"../Stream":318,"../disposable/dispose":347,"../scheduler/PropagateTask":358}],370:[function(require,module,exports){
+},{"../Stream":319,"../disposable/dispose":348,"../scheduler/PropagateTask":359}],371:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -12229,7 +12460,7 @@ Subscription.prototype.dispose = function() {
 	}
 };
 
-},{"../Stream":318,"../sink/DeferredSink":363,"./tryEvent":378,"@most/multicast":3}],371:[function(require,module,exports){
+},{"../Stream":319,"../sink/DeferredSink":364,"./tryEvent":379,"@most/multicast":3}],372:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -12265,7 +12496,7 @@ function from(a) { // eslint-disable-line complexity
 	throw new TypeError('from(x) must be observable, iterable, or array-like: ' + a);
 }
 
-},{"../Stream":318,"../iterable":353,"../observable/fromObservable":354,"../observable/getObservable":355,"./fromArray":372,"./fromIterable":374,"@most/prelude":4}],372:[function(require,module,exports){
+},{"../Stream":319,"../iterable":354,"../observable/fromObservable":355,"../observable/getObservable":356,"./fromArray":373,"./fromIterable":375,"@most/prelude":4}],373:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -12299,7 +12530,7 @@ function runProducer(t, array, sink) {
 	}
 }
 
-},{"../Stream":318,"../scheduler/PropagateTask":358}],373:[function(require,module,exports){
+},{"../Stream":319,"../scheduler/PropagateTask":359}],374:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -12335,7 +12566,7 @@ function fromEvent(event, source /*, useCapture = false */) {
 	return new Stream(s);
 }
 
-},{"../Stream":318,"./EventEmitterSource":367,"./EventTargetSource":368,"@most/multicast":3}],374:[function(require,module,exports){
+},{"../Stream":319,"./EventEmitterSource":368,"./EventTargetSource":369,"@most/multicast":3}],375:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -12380,7 +12611,7 @@ function runProducer(t, producer, sink) {
 	producer.scheduler.asap(producer.task);
 }
 
-},{"../Stream":318,"../iterable":353,"../scheduler/PropagateTask":358}],375:[function(require,module,exports){
+},{"../Stream":319,"../iterable":354,"../scheduler/PropagateTask":359}],376:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2014 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -12452,7 +12683,7 @@ Generate.prototype.dispose = function() {
 	this.active = false;
 };
 
-},{"../Stream":318,"@most/prelude":4}],376:[function(require,module,exports){
+},{"../Stream":319,"@most/prelude":4}],377:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -12522,7 +12753,7 @@ function continueIterate(iterate, x) {
 	return !iterate.active ? iterate.value : stepIterate(iterate, x);
 }
 
-},{"../Stream":318}],377:[function(require,module,exports){
+},{"../Stream":319}],378:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -12557,7 +12788,7 @@ function emit(t, x, sink) {
 	sink.event(t, x);
 }
 
-},{"../Stream":318,"../disposable/dispose":347,"../scheduler/PropagateTask":358,"@most/multicast":3}],378:[function(require,module,exports){
+},{"../Stream":319,"../disposable/dispose":348,"../scheduler/PropagateTask":359,"@most/multicast":3}],379:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -12581,7 +12812,7 @@ function tryEnd(t, x, sink) {
 	}
 }
 
-},{}],379:[function(require,module,exports){
+},{}],380:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -12656,7 +12887,7 @@ function continueUnfold(unfold, tuple) {
 	return stepUnfold(unfold, tuple.seed);
 }
 
-},{"../Stream":318}],380:[function(require,module,exports){
+},{"../Stream":319}],381:[function(require,module,exports){
 /** @license MIT License (c) copyright 2010-2016 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -13370,7 +13601,7 @@ Stream.prototype.multicast = function() {
 	return multicast(this);
 };
 
-},{"./lib/Stream":318,"./lib/combinator/accumulate":319,"./lib/combinator/applicative":320,"./lib/combinator/build":321,"./lib/combinator/combine":322,"./lib/combinator/concatMap":323,"./lib/combinator/continueWith":324,"./lib/combinator/delay":325,"./lib/combinator/errors":326,"./lib/combinator/filter":327,"./lib/combinator/flatMap":328,"./lib/combinator/limit":329,"./lib/combinator/loop":330,"./lib/combinator/merge":331,"./lib/combinator/mergeConcurrently":332,"./lib/combinator/observe":333,"./lib/combinator/promises":334,"./lib/combinator/sample":335,"./lib/combinator/slice":336,"./lib/combinator/switch":337,"./lib/combinator/thru":338,"./lib/combinator/timeslice":339,"./lib/combinator/timestamp":340,"./lib/combinator/transduce":341,"./lib/combinator/transform":342,"./lib/combinator/zip":343,"./lib/observable/subscribe":356,"./lib/source/core":369,"./lib/source/create":370,"./lib/source/from":371,"./lib/source/fromEvent":373,"./lib/source/generate":375,"./lib/source/iterate":376,"./lib/source/periodic":377,"./lib/source/unfold":379,"@most/multicast":3,"@most/prelude":4,"symbol-observable":383}],381:[function(require,module,exports){
+},{"./lib/Stream":319,"./lib/combinator/accumulate":320,"./lib/combinator/applicative":321,"./lib/combinator/build":322,"./lib/combinator/combine":323,"./lib/combinator/concatMap":324,"./lib/combinator/continueWith":325,"./lib/combinator/delay":326,"./lib/combinator/errors":327,"./lib/combinator/filter":328,"./lib/combinator/flatMap":329,"./lib/combinator/limit":330,"./lib/combinator/loop":331,"./lib/combinator/merge":332,"./lib/combinator/mergeConcurrently":333,"./lib/combinator/observe":334,"./lib/combinator/promises":335,"./lib/combinator/sample":336,"./lib/combinator/slice":337,"./lib/combinator/switch":338,"./lib/combinator/thru":339,"./lib/combinator/timeslice":340,"./lib/combinator/timestamp":341,"./lib/combinator/transduce":342,"./lib/combinator/transform":343,"./lib/combinator/zip":344,"./lib/observable/subscribe":357,"./lib/source/core":370,"./lib/source/create":371,"./lib/source/from":372,"./lib/source/fromEvent":374,"./lib/source/generate":376,"./lib/source/iterate":377,"./lib/source/periodic":378,"./lib/source/unfold":380,"@most/multicast":3,"@most/prelude":4,"symbol-observable":384}],382:[function(require,module,exports){
 // shim for using process in browser
 
 var process = module.exports = {};
@@ -13466,7 +13697,7 @@ process.chdir = function (dir) {
 };
 process.umask = function() { return 0; };
 
-},{}],382:[function(require,module,exports){
+},{}],383:[function(require,module,exports){
 //  Ramda v0.21.0
 //  https://github.com/ramda/ramda
 //  (c) 2013-2016 Scott Sauyet, Michael Hurley, and David Chambers
@@ -22252,7 +22483,7 @@ process.umask = function() { return 0; };
 
 }.call(this));
 
-},{}],383:[function(require,module,exports){
+},{}],384:[function(require,module,exports){
 (function (global){
 /* global window */
 'use strict';
@@ -22260,7 +22491,7 @@ process.umask = function() { return 0; };
 module.exports = require('./ponyfill')(global || window || this);
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"./ponyfill":384}],384:[function(require,module,exports){
+},{"./ponyfill":385}],385:[function(require,module,exports){
 'use strict';
 
 module.exports = function symbolObservablePonyfill(root) {
@@ -22281,7 +22512,7 @@ module.exports = function symbolObservablePonyfill(root) {
 	return result;
 };
 
-},{}],385:[function(require,module,exports){
+},{}],386:[function(require,module,exports){
 (function(self) {
   'use strict';
 
@@ -22716,7 +22947,7 @@ module.exports = function symbolObservablePonyfill(root) {
   self.fetch.polyfill = true
 })(typeof self !== 'undefined' ? self : this);
 
-},{}],386:[function(require,module,exports){
+},{}],387:[function(require,module,exports){
 module.exports={
   "offset": {
     "x": 0,
@@ -22854,7 +23085,7 @@ module.exports={
   ]
 }
 
-},{}],387:[function(require,module,exports){
+},{}],388:[function(require,module,exports){
 module.exports={
   "next": 3,
   "config": {
@@ -22866,7 +23097,7 @@ module.exports={
   }
 }
 
-},{}],388:[function(require,module,exports){
+},{}],389:[function(require,module,exports){
 module.exports={
   "size": {
     "width": 10,
@@ -22880,7 +23111,7 @@ module.exports={
   }
 }
 
-},{}],389:[function(require,module,exports){
+},{}],390:[function(require,module,exports){
 module.exports={
   "keys": [
     "move-left",
@@ -22904,7 +23135,7 @@ module.exports={
   }
 }
 
-},{}],390:[function(require,module,exports){
+},{}],391:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -23082,7 +23313,7 @@ var Core = function () {
 
 exports.default = Core;
 
-},{"../data/block.json":386,"../data/engine.json":387,"../data/ground.json":388,"../structs/block":398,"../structs/ground":399,"../utils/random":401,"ramda":382}],391:[function(require,module,exports){
+},{"../data/block.json":387,"../data/engine.json":388,"../data/ground.json":389,"../structs/block":399,"../structs/ground":400,"../utils/random":402,"ramda":383}],392:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -23090,6 +23321,10 @@ Object.defineProperty(exports, "__esModule", {
 });
 
 var _createClass = function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; }();
+
+var _loglevel = require("loglevel");
+
+var _loglevel2 = _interopRequireDefault(_loglevel);
 
 var _core = require("./core");
 
@@ -23117,6 +23352,7 @@ var Engine = function () {
   function Engine() {
     _classCallCheck(this, Engine);
 
+    this.frame = 0;
     this.core = new _core2.default();
     this.state = State.Begin;
     this.delays = {
@@ -23127,6 +23363,15 @@ var Engine = function () {
   }
 
   _createClass(Engine, [{
+    key: "trace",
+    value: function trace() {
+      for (var _len = arguments.length, args = Array(_len), _key = 0; _key < _len; _key++) {
+        args[_key] = arguments[_key];
+      }
+
+      _loglevel2.default.trace.apply(_loglevel2.default, ["%o [%s]", this.frame, String(this.state).toUpperCase()].concat(args));
+    }
+  }, {
     key: "delay",
     value: function delay(name, config) {
       this.delays[name]++;
@@ -23157,6 +23402,7 @@ var Engine = function () {
       switch (this.state) {
         case State.Begin:
           {
+            this.trace();
             this.state = State.Create;
             break;
           }
@@ -23165,6 +23411,7 @@ var Engine = function () {
           {
             core.next();
             core.showBlock = false;
+            this.trace(core.block);
             this.state = State.DelayShow;
             break;
           }
@@ -23249,6 +23496,7 @@ var Engine = function () {
         case State.Lock:
           {
             core.lock();
+            this.trace();
             this.state = State.Create;
             break;
           }
@@ -23256,6 +23504,7 @@ var Engine = function () {
         case State.End:
           {
             // TODO
+            this.trace();
             break;
           }
       }
@@ -23277,6 +23526,7 @@ var Engine = function () {
       var input = _ref2.input;
 
       for (var __ = 0; __ < frame; __++) {
+        this.frame++;
         this.loop({ config: config, input: input });
       }
       if (this.state === State.End) {
@@ -23296,7 +23546,7 @@ var Engine = function () {
 
 exports.default = Engine;
 
-},{"./core":390}],392:[function(require,module,exports){
+},{"./core":391,"loglevel":314}],393:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -23336,7 +23586,7 @@ exports.default = _ramda2.default.curry(function (_ref, ticker) {
   });
 });
 
-},{"./engine":391,"@most/create":2,"ramda":382}],393:[function(require,module,exports){
+},{"./engine":392,"@most/create":2,"ramda":383}],394:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -23420,7 +23670,7 @@ var Game = function () {
 
 exports.default = Game;
 
-},{"./data/engine.json":387,"./data/input.json":389,"./engine":392,"./input/keyboard":394,"./input/utils/key-mapper":395,"./input/utils/key-store":396,"./utils/storage":402,"./utils/ticker":403,"ramda":382}],394:[function(require,module,exports){
+},{"./data/engine.json":388,"./data/input.json":390,"./engine":393,"./input/keyboard":395,"./input/utils/key-mapper":396,"./input/utils/key-store":397,"./utils/storage":403,"./utils/ticker":404,"ramda":383}],395:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -23447,7 +23697,7 @@ exports.default = function (root) {
   }));
 };
 
-},{"most":380}],395:[function(require,module,exports){
+},{"most":381}],396:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -23469,7 +23719,7 @@ exports.default = _ramda2.default.curry(function (mapper, action) {
   }, action, mapper.map(_ramda2.default.invertObj)).filter(_ramda2.default.prop("key"));
 });
 
-},{"ramda":382}],396:[function(require,module,exports){
+},{"ramda":383}],397:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -23492,7 +23742,7 @@ exports.default = _ramda2.default.curry(function (keys, action) {
   }).startWith(state);
 });
 
-},{"ramda":382}],397:[function(require,module,exports){
+},{"ramda":383}],398:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -23577,7 +23827,7 @@ var Renderer = function () {
 
 exports.default = Renderer;
 
-},{"./data/ground.json":388,"./structs/block":398,"./structs/ground":399}],398:[function(require,module,exports){
+},{"./data/ground.json":389,"./structs/block":399,"./structs/ground":400}],399:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -23648,7 +23898,7 @@ var getData = exports.getData = function getData(_ref2) {
   return types[type][rotate];
 };
 
-},{"../data/block.json":386,"../utils/matrix":400,"ramda":382}],399:[function(require,module,exports){
+},{"../data/block.json":387,"../utils/matrix":401,"ramda":383}],400:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -23729,7 +23979,7 @@ var place = exports.place = _ramda2.default.curry(function (ground, block) {
   }
 });
 
-},{"../data/ground.json":388,"./block":398,"ramda":382}],400:[function(require,module,exports){
+},{"../data/ground.json":389,"./block":399,"ramda":383}],401:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -23745,7 +23995,7 @@ function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { de
 
 var rotate = exports.rotate = _ramda2.default.compose(_ramda2.default.map(_ramda2.default.reverse), _ramda2.default.transpose);
 
-},{"ramda":382}],401:[function(require,module,exports){
+},{"ramda":383}],402:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -23784,7 +24034,7 @@ var Random = function () {
 
 exports.default = Random;
 
-},{"mersennetwister":314}],402:[function(require,module,exports){
+},{"mersennetwister":315}],403:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -23863,9 +24113,13 @@ var Storage = function (_EventEmitter) {
   return Storage;
 }(_events.EventEmitter);
 
-exports.default = new Storage(localStorage);
+var storage = new Storage(localStorage);
 
-},{"events":313,"most":380,"ramda":382}],403:[function(require,module,exports){
+System.global.storage = storage;
+
+exports.default = storage;
+
+},{"events":313,"most":381,"ramda":383}],404:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
