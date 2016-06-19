@@ -22860,7 +22860,7 @@ module.exports={
   "config": {
     "delay": {
       "show": 0,
-      "drop": 0,
+      "drop": 60,
       "lock": 60
     }
   }
