@@ -23116,8 +23116,8 @@ module.exports={
   "keys": [
     "move-left",
     "move-right",
+    "drop",
     "hard-drop",
-    "soft-drop",
     "rotate-left",
     "rotate-right",
     "hold"
@@ -23126,8 +23126,8 @@ module.exports={
     "keyboard": {
       "move-left": "ArrowLeft",
       "move-right": "ArrowRight",
+      "drop": "ArrowDown",
       "hard-drop": "ArrowUp",
-      "soft-drop": "ArrowDown",
       "rotate-left": "KeyZ",
       "rotate-right": "KeyX",
       "hold": "Space"
@@ -23228,23 +23228,68 @@ var Core = function () {
       this.place();
     }
   }, {
+    key: "moveBy",
+    value: function moveBy(x, y) {
+      this.block = (0, _block3.moveBy)(this.block, x, y);
+    }
+  }, {
+    key: "canMoveBy",
+    value: function canMoveBy(x, y) {
+      return this.checkAvailable((0, _block3.moveBy)(this.block, x, y));
+    }
+  }, {
+    key: "tryMoveBy",
+    value: function tryMoveBy(x, y) {
+      var result = void 0;
+      if (result = this.canMoveBy(x, y)) {
+        this.moveBy(x, y);
+      }
+      return result;
+    }
+  }, {
+    key: "moveLeft",
+    value: function moveLeft() {
+      this.moveBy(-1, 0);
+    }
+  }, {
+    key: "canMoveLeft",
+    value: function canMoveLeft() {
+      return this.canMoveBy(-1, 0);
+    }
+  }, {
+    key: "tryMoveLeft",
+    value: function tryMoveLeft() {
+      return this.tryMoveBy(-1, 0);
+    }
+  }, {
+    key: "moveRight",
+    value: function moveRight() {
+      this.moveBy(1, 0);
+    }
+  }, {
+    key: "canMoveRight",
+    value: function canMoveRight() {
+      return this.canMoveBy(1, 0);
+    }
+  }, {
+    key: "tryMoveRight",
+    value: function tryMoveRight() {
+      return this.tryMoveBy(1, 0);
+    }
+  }, {
     key: "drop",
     value: function drop() {
-      this.block = (0, _block3.moveBy)(this.block, 0, 1);
+      this.moveBy(0, 1);
     }
   }, {
     key: "canDrop",
     value: function canDrop() {
-      return this.checkAvailable((0, _block3.moveBy)(this.block, 0, 1));
+      return this.canMoveBy(0, 1);
     }
   }, {
     key: "tryDrop",
     value: function tryDrop() {
-      var result = void 0;
-      if (result = this.canDrop()) {
-        this.drop();
-      }
-      return result;
+      return this.tryMoveBy(0, 1);
     }
   }, {
     key: "rotate",
@@ -23372,24 +23417,15 @@ var Engine = function () {
       _loglevel2.default.trace.apply(_loglevel2.default, ["%o [%s]", this.frame, String(this.state).toUpperCase()].concat(args));
     }
   }, {
-    key: "delay",
-    value: function delay(name, config) {
-      this.delays[name]++;
-      var result = this.delays[name] > config.delay[name];
-      if (result) {
-        this.delays[name] = 0;
-      }
-      return result;
-    }
-  }, {
     key: "resetLockDelay",
     value: function resetLockDelay() {
-      // FIXME
+      // TODO
       this.delays.lock = 0;
     }
   }, {
-    key: "actKey",
-    value: function actKey() {
+    key: "actInput",
+    value: function actInput() {
+      // TODO
       var hasMoved = false;
       return hasMoved;
     }
@@ -23397,9 +23433,10 @@ var Engine = function () {
     key: "act",
     value: function act(_ref) {
       var config = _ref.config;
+      var input = _ref.input;
 
       var core = this.core;
-      switch (this.state) {
+      outer: switch (this.state) {
         case State.Begin:
           {
             this.trace();
@@ -23431,6 +23468,7 @@ var Engine = function () {
           {
             core.showBlock = true;
             // TODO: IRS & IHS
+            this.trace(core.block);
             this.state = State.CheckDead;
             break;
           }
@@ -23467,6 +23505,12 @@ var Engine = function () {
               this.state = State.Drop;
               break;
             }
+            while (this.actInput(input)) {
+              if (!core.canDrop()) {
+                this.state = State.CheckDrop;
+                break outer;
+              }
+            }
             this.delays.drop++;
             break;
           }
@@ -23489,6 +23533,12 @@ var Engine = function () {
               this.state = State.Lock;
               break;
             }
+            while (this.actInput(input)) {
+              if (core.canDrop()) {
+                this.state = State.CheckDrop;
+                break outer;
+              }
+            }
             this.delays.lock++;
             break;
           }
@@ -23496,6 +23546,7 @@ var Engine = function () {
         case State.Lock:
           {
             core.lock();
+            this.delays.drop = 0;
             this.trace();
             this.state = State.Create;
             break;
@@ -23525,18 +23576,20 @@ var Engine = function () {
       var config = _ref2.config;
       var input = _ref2.input;
 
-      for (var __ = 0; __ < frame; __++) {
-        this.frame++;
-        this.loop({ config: config, input: input });
-      }
       if (this.state === State.End) {
         return {
           action: "complete"
         };
       }
+      for (var __ = 0; __ < frame; __++) {
+        this.loop({ config: config, input: input });
+        this.frame++;
+      }
       return {
         action: "next",
-        data: this.core
+        state: this.state,
+        data: this.core,
+        delays: this.delays
       };
     }
   }]);
@@ -23771,8 +23824,8 @@ var Renderer = function () {
     _classCallCheck(this, Renderer);
 
     // TODO
-    this.width = 100;
-    this.height = 200;
+    this.width = WIDTH * 20;
+    this.height = HEIGHT * 20;
     this.canvas = document.createElement("canvas");
     this.canvas.width = this.width * window.devicePixelRatio;
     this.canvas.height = this.height * window.devicePixelRatio;
@@ -23787,8 +23840,11 @@ var Renderer = function () {
     key: "drawUnit",
     value: function drawUnit(x, y, type) {
       if (type !== _ground3.EMPTY) {
-        this.context.fillRect(x * 10, y * 10, 10, 10);
+        this.context.fillStyle = "#000";
+      } else {
+        this.context.fillStyle = "#eee";
       }
+      this.context.fillRect(x * 20 + 1, y * 20 + 1, 20 - 2, 20 - 2);
     }
   }, {
     key: "drawBlock",
