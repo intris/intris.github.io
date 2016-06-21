@@ -23089,6 +23089,8 @@ module.exports={
 module.exports={
   "next": 3,
   "config": {
+    "arr": 7,
+    "das": 1,
     "delay": {
       "show": 0,
       "drop": 60,
@@ -23184,7 +23186,11 @@ var Core = function () {
 
     this.ground = (0, _ground4.default)();
     this.block = null;
-    this.showBlock = false;
+    this.maskBlock = null;
+    this.holdBlock = null;
+    this.hasHeld = false;
+    this.showBlock = true;
+    this.isLocked = false;
     this.nexts = _ramda2.default.times(this.randomType.bind(this), _engine2.default.next);
   }
 
@@ -23201,7 +23207,51 @@ var Core = function () {
       });
       var data = (0, _block3.getData)(block);
       this.block = (0, _block3.moveTo)(block, Math.floor((_ground2.default.size.width - data.size.width) / 2 + _block2.default.offset.x), Math.floor(-data.size.height / 2 + _block2.default.offset.y));
+      this.hasHeld = false;
+      this.showBlock = true;
+      this.isLocked = false;
       this.nexts = _ramda2.default.append(this.randomType(), _ramda2.default.tail(this.nexts));
+      this.calculateMask();
+    }
+  }, {
+    key: "calculateMask",
+    value: function calculateMask() {
+      this.maskBlock = (0, _block3.clone)(this.block);
+      while (this.checkAvailable((0, _block3.moveBy)(this.maskBlock, 0, 1))) {
+        this.maskBlock = (0, _block3.moveBy)(this.maskBlock, 0, 1);
+      }
+    }
+  }, {
+    key: "clearLines",
+    value: function clearLines() {
+      (0, _ground3.clearLines)(this.ground);
+    }
+  }, {
+    key: "hold",
+    value: function hold() {
+      var nextBlock = this.holdBlock;
+      this.holdBlock = this.block;
+      this.block = nextBlock;
+      if (!this.block) {
+        this.next();
+      } else {
+        this.calculateMask();
+      }
+      this.hasHeld = true;
+    }
+  }, {
+    key: "canHold",
+    value: function canHold() {
+      return !this.hasHeld;
+    }
+  }, {
+    key: "tryHold",
+    value: function tryHold() {
+      var result = void 0;
+      if (result = this.canHold()) {
+        this.hold();
+      }
+      return result;
     }
   }, {
     key: "checkAvailable",
@@ -23225,12 +23275,14 @@ var Core = function () {
   }, {
     key: "lock",
     value: function lock() {
+      this.isLocked = true;
       this.place();
     }
   }, {
     key: "moveBy",
     value: function moveBy(x, y) {
       this.block = (0, _block3.moveBy)(this.block, x, y);
+      this.calculateMask();
     }
   }, {
     key: "canMoveBy",
@@ -23297,6 +23349,7 @@ var Core = function () {
       var offset = arguments.length <= 1 || arguments[1] === undefined ? [0, 0] : arguments[1];
 
       this.block = (0, _block3.rotate)((0, _block3.moveBy)(this.block, offset[0], offset[1]), direction);
+      this.calculateMask();
     }
   }, {
     key: "canRotate",
@@ -23384,14 +23437,28 @@ var State = {
   Create: "create",
   DelayShow: "delay-show",
   Show: "show",
+  Hold: "hold",
   CheckDead: "check-dead",
   CheckDrop: "check-drop",
   DelayDrop: "delay-drop",
   Drop: "drop",
   DelayLock: "delay-lock",
   Lock: "lock",
+  ClearLine: "clear-line",
   End: "end"
 };
+
+var Key = {
+  MoveLeft: "move-left",
+  MoveRight: "move-right",
+  Drop: "drop",
+  HardDrop: "hard-drop",
+  RotateLeft: "rotate-left",
+  RotateRight: "rotate-right",
+  Hold: "hold"
+};
+
+var Keys = [Key.Hold, Key.HardDrop, Key.RotateLeft, Key.RotateRight, Key.MoveLeft, Key.MoveRight, Key.Drop];
 
 var Engine = function () {
   function Engine() {
@@ -23400,6 +23467,38 @@ var Engine = function () {
     this.frame = 0;
     this.core = new _core2.default();
     this.state = State.Begin;
+    this.keyState = {};
+    var _iteratorNormalCompletion = true;
+    var _didIteratorError = false;
+    var _iteratorError = undefined;
+
+    try {
+      for (var _iterator = Keys[Symbol.iterator](), _step; !(_iteratorNormalCompletion = (_step = _iterator.next()).done); _iteratorNormalCompletion = true) {
+        var key = _step.value;
+
+        this.keyState[key] = {
+          isDown: false,
+          delayed: false,
+          start: -1,
+          count: -1,
+          previous: -1
+        };
+      }
+    } catch (err) {
+      _didIteratorError = true;
+      _iteratorError = err;
+    } finally {
+      try {
+        if (!_iteratorNormalCompletion && _iterator.return) {
+          _iterator.return();
+        }
+      } finally {
+        if (_didIteratorError) {
+          throw _iteratorError;
+        }
+      }
+    }
+
     this.delays = {
       show: 0,
       drop: 0,
@@ -23423,20 +23522,168 @@ var Engine = function () {
       this.delays.lock = 0;
     }
   }, {
+    key: "shouldActKey",
+    value: function shouldActKey(key, config) {
+      var state = this.keyState[key];
+      if (!state.isDown) {
+        return false;
+      }
+      // TODO: support state.delayed
+      // FIXME: when Key.MoveLeft & Key.MoveRight both down
+      switch (key) {
+        case Key.MoveLeft:
+          {
+            if (this.keyState[Key.MoveRight].isDown && this.keyState[Key.MoveRight].start > state.start) {
+              return false;
+            }
+            break;
+          }
+        case Key.MoveRight:
+          {
+            if (this.keyState[Key.MoveLeft].isDown && this.keyState[Key.MoveLeft].start >= state.start) {
+              return false;
+            }
+            break;
+          }
+        case Key.RotateLeft:
+          {
+            if (this.keyState[Key.RotateRight].isDown && this.keyState[Key.RotateRight].start > state.start) {
+              return false;
+            }
+            break;
+          }
+        case Key.RotateRight:
+          {
+            if (this.keyState[Key.RotateLeft].isDown && this.keyState[Key.RotateLeft].start >= state.start) {
+              return false;
+            }
+            break;
+          }
+      }
+      switch (key) {
+        case Key.Hold:
+        case Key.HardDrop:
+        case Key.RotateLeft:
+        case Key.RotateRight:
+          {
+            return state.count === 0 && state.previous !== state.count;
+          }
+        case Key.MoveLeft:
+        case Key.MoveRight:
+          {
+            if (state.count === 0 && state.previous !== state.count) {
+              return true;
+            }
+            if (state.count >= config.arr && (state.count - config.arr) % config.das === 0 && state.count - state.previous >= config.das) {
+              return true;
+            }
+            return false;
+          }
+        case Key.Drop:
+          {
+            return state.count % config.das === 0 && state.count - state.previous >= config.das;
+          }
+      }
+      return false;
+    }
+  }, {
+    key: "actKey",
+    value: function actKey(key) {
+      var core = this.core;
+      var state = this.keyState[key];
+      state.previous = this.frame - state.start;
+      switch (key) {
+        case Key.MoveLeft:
+          {
+            return core.tryMoveLeft();
+          }
+
+        case Key.MoveRight:
+          {
+            return core.tryMoveRight();
+          }
+
+        case Key.Drop:
+          {
+            var result = void 0;
+            if (result = core.tryDrop()) {
+              this.delays.drop = 0;
+            }
+            return result;
+          }
+
+        case Key.HardDrop:
+          {
+            while (core.tryDrop()) {}
+            this.state = State.Lock;
+            return true;
+          }
+
+        case Key.RotateLeft:
+          {
+            return core.tryRotateLeft();
+          }
+
+        case Key.RotateRight:
+          {
+            return core.tryRotateRight();
+          }
+
+        case Key.Hold:
+          {
+            var _result = void 0;
+            if (_result = core.canHold()) {
+              this.state = State.Hold;
+            }
+            return _result;
+          }
+      }
+      return false;
+    }
+  }, {
     key: "actInput",
-    value: function actInput() {
-      // TODO
+    value: function actInput(config) {
+      var keys = arguments.length <= 1 || arguments[1] === undefined ? Keys : arguments[1];
+
+      var previousState = this.state;
       var hasMoved = false;
+      var _iteratorNormalCompletion2 = true;
+      var _didIteratorError2 = false;
+      var _iteratorError2 = undefined;
+
+      try {
+        for (var _iterator2 = keys[Symbol.iterator](), _step2; !(_iteratorNormalCompletion2 = (_step2 = _iterator2.next()).done); _iteratorNormalCompletion2 = true) {
+          var key = _step2.value;
+
+          if (this.shouldActKey(key, config)) {
+            hasMoved = hasMoved || this.actKey(key);
+            if (previousState !== this.state) {
+              return hasMoved;
+            }
+          }
+        }
+      } catch (err) {
+        _didIteratorError2 = true;
+        _iteratorError2 = err;
+      } finally {
+        try {
+          if (!_iteratorNormalCompletion2 && _iterator2.return) {
+            _iterator2.return();
+          }
+        } finally {
+          if (_didIteratorError2) {
+            throw _iteratorError2;
+          }
+        }
+      }
+
       return hasMoved;
     }
   }, {
     key: "act",
-    value: function act(_ref) {
-      var config = _ref.config;
-      var input = _ref.input;
-
+    value: function act(config) {
       var core = this.core;
-      outer: switch (this.state) {
+      switch (this.state) {
         case State.Begin:
           {
             this.trace();
@@ -23467,7 +23714,17 @@ var Engine = function () {
         case State.Show:
           {
             core.showBlock = true;
+            this.delays.drop = 0;
             // TODO: IRS & IHS
+            this.trace(core.block);
+            this.state = State.CheckDead;
+            break;
+          }
+
+        case State.Hold:
+          {
+            core.hold();
+            this.delays.drop = 0;
             this.trace(core.block);
             this.state = State.CheckDead;
             break;
@@ -23505,11 +23762,12 @@ var Engine = function () {
               this.state = State.Drop;
               break;
             }
-            while (this.actInput(input)) {
-              if (!core.canDrop()) {
-                this.state = State.CheckDrop;
-                break outer;
+            if (this.actInput(config)) {
+              if (this.state !== State.DelayDrop) {
+                break;
               }
+              this.state = State.CheckDrop;
+              break;
             }
             this.delays.drop++;
             break;
@@ -23533,11 +23791,12 @@ var Engine = function () {
               this.state = State.Lock;
               break;
             }
-            while (this.actInput(input)) {
-              if (core.canDrop()) {
-                this.state = State.CheckDrop;
-                break outer;
+            if (this.actInput(config)) {
+              if (this.state !== State.DelayLock) {
+                break;
               }
+              this.state = State.CheckDrop;
+              break;
             }
             this.delays.lock++;
             break;
@@ -23546,8 +23805,14 @@ var Engine = function () {
         case State.Lock:
           {
             core.lock();
-            this.delays.drop = 0;
             this.trace();
+            this.state = State.ClearLine;
+            break;
+          }
+
+        case State.ClearLine:
+          {
+            core.clearLines();
             this.state = State.Create;
             break;
           }
@@ -23561,12 +23826,74 @@ var Engine = function () {
       }
     }
   }, {
+    key: "nextKey",
+    value: function nextKey(key, isDown) {
+      var core = this.core;
+      var state = this.keyState[key];
+      var previousIsDown = state.isDown;
+      if (isDown) {
+        state.isDown = true;
+        if (!previousIsDown) {
+          if (!core.showBlock) {
+            state.delayed = true;
+          }
+          state.start = this.frame;
+        }
+        if (core.showBlock) {
+          state.delayed = false;
+        }
+        if (state.delayed) {
+          state.count = 0;
+        } else {
+          state.count++;
+        }
+      } else {
+        state.isDown = false;
+        state.delayed = false;
+        state.start = -1;
+        state.count = -1;
+        state.previous = -1;
+      }
+    }
+  }, {
+    key: "nextInput",
+    value: function nextInput(input) {
+      var _iteratorNormalCompletion3 = true;
+      var _didIteratorError3 = false;
+      var _iteratorError3 = undefined;
+
+      try {
+        for (var _iterator3 = Keys[Symbol.iterator](), _step3; !(_iteratorNormalCompletion3 = (_step3 = _iterator3.next()).done); _iteratorNormalCompletion3 = true) {
+          var key = _step3.value;
+
+          this.nextKey(key, input[key]);
+        }
+      } catch (err) {
+        _didIteratorError3 = true;
+        _iteratorError3 = err;
+      } finally {
+        try {
+          if (!_iteratorNormalCompletion3 && _iterator3.return) {
+            _iterator3.return();
+          }
+        } finally {
+          if (_didIteratorError3) {
+            throw _iteratorError3;
+          }
+        }
+      }
+    }
+  }, {
     key: "loop",
-    value: function loop(data) {
+    value: function loop(_ref) {
+      var config = _ref.config;
+      var input = _ref.input;
+
+      this.nextInput(input);
       var previousState = null;
       while (previousState !== this.state) {
         previousState = this.state;
-        this.act(data);
+        this.act(config);
       }
     }
   }, {
@@ -23839,21 +24166,25 @@ var Renderer = function () {
   _createClass(Renderer, [{
     key: "drawUnit",
     value: function drawUnit(x, y, type) {
+      var mask = arguments.length <= 3 || arguments[3] === undefined ? false : arguments[3];
+
       if (type !== _ground3.EMPTY) {
-        this.context.fillStyle = "#000";
+        this.context.fillStyle = mask ? "#cfd8dc" : "#607d8b";
       } else {
-        this.context.fillStyle = "#eee";
+        this.context.fillStyle = "#fafafa";
       }
       this.context.fillRect(x * 20 + 1, y * 20 + 1, 20 - 2, 20 - 2);
     }
   }, {
     key: "drawBlock",
     value: function drawBlock(block) {
+      var mask = arguments.length <= 1 || arguments[1] === undefined ? false : arguments[1];
+
       var data = (0, _block.getData)(block);
       for (var x = 0; x < data.size.width; x++) {
         for (var y = 0; y < data.size.height; y++) {
           if (data.data[y][x]) {
-            this.drawUnit(x + block.x, y + block.y, block.type);
+            this.drawUnit(x + block.x, y + block.y, block.type, mask);
           }
         }
       }
@@ -23874,6 +24205,7 @@ var Renderer = function () {
 
       this.context.clearRect(0, 0, this.width, this.height);
       this.drawGround(data.ground);
+      this.drawBlock(data.maskBlock, true);
       this.drawBlock(data.block);
     }
   }]);
@@ -23889,7 +24221,7 @@ exports.default = Renderer;
 Object.defineProperty(exports, "__esModule", {
   value: true
 });
-exports.getData = exports.moveBy = exports.moveTo = exports.ROTATE_RIGHT = exports.ROTATE_LEFT = exports.rotate = undefined;
+exports.getData = exports.moveBy = exports.moveTo = exports.ROTATE_RIGHT = exports.ROTATE_LEFT = exports.rotate = exports.clone = undefined;
 
 var _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; };
 
@@ -23928,6 +24260,10 @@ exports.default = function () {
   return { type: type, rotate: rotate, x: x, y: y };
 };
 
+var clone = exports.clone = function clone(block) {
+  return _extends({}, block);
+};
+
 var rotate = exports.rotate = _ramda2.default.curry(function (block, direction) {
   return _extends({}, block, {
     rotate: _ramda2.default.mathMod(block.rotate + direction, 4)
@@ -23960,7 +24296,7 @@ var getData = exports.getData = function getData(_ref2) {
 Object.defineProperty(exports, "__esModule", {
   value: true
 });
-exports.place = exports.checkAvailable = exports.set = exports.get = exports.isIn = exports.WALL = exports.EMPTY = undefined;
+exports.clearLines = exports.clearLine = exports.isFull = exports.place = exports.checkAvailable = exports.set = exports.get = exports.isIn = exports.WALL = exports.EMPTY = undefined;
 
 var _ramda = require("ramda");
 
@@ -24034,6 +24370,35 @@ var place = exports.place = _ramda2.default.curry(function (ground, block) {
     }
   }
 });
+
+var isFull = exports.isFull = _ramda2.default.curry(function (ground, y) {
+  for (var x = -P_LEFT; x < WIDTH + P_RIGHT; x++) {
+    if (get(ground, x, y) === EMPTY) {
+      return false;
+    }
+  }
+  return true;
+});
+
+var clearLine = exports.clearLine = _ramda2.default.curry(function (ground, lineY) {
+  for (var y = lineY; y > -P_TOP; y--) {
+    for (var x = -P_LEFT; x < WIDTH + P_RIGHT; x++) {
+      set(ground, x, y, get(ground, x, y - 1));
+    }
+  }
+  for (var _x = -P_LEFT; _x < WIDTH + P_RIGHT; _x++) {
+    set(ground, _x, -P_TOP, EMPTY);
+  }
+});
+
+var clearLines = exports.clearLines = function clearLines(ground) {
+  for (var y = -P_TOP; y < HEIGHT + P_BOTTOM; y++) {
+    if (isFull(ground, y)) {
+      console.log(y);
+      clearLine(ground, y);
+    }
+  }
+};
 
 },{"../data/ground.json":389,"./block":399,"ramda":383}],401:[function(require,module,exports){
 "use strict";
