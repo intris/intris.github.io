@@ -23571,10 +23571,10 @@ var Engine = function () {
         case Key.MoveLeft:
         case Key.MoveRight:
           {
-            if (state.count === 0 && state.previous !== state.count) {
+            if (state.count >= config.arr && (state.count - config.arr) % config.das === 0 && state.count - state.previous >= config.das) {
               return true;
             }
-            if (state.count >= config.arr && (state.count - config.arr) % config.das === 0 && state.count - state.previous >= config.das) {
+            if (state.count === 0 && state.previous !== state.count) {
               return true;
             }
             return false;
@@ -24264,25 +24264,25 @@ var clone = exports.clone = function clone(block) {
   return _extends({}, block);
 };
 
-var rotate = exports.rotate = _ramda2.default.curry(function (block, direction) {
+var rotate = exports.rotate = function rotate(block, direction) {
   return _extends({}, block, {
     rotate: _ramda2.default.mathMod(block.rotate + direction, 4)
   });
-});
+};
 
 var ROTATE_LEFT = exports.ROTATE_LEFT = -1;
 var ROTATE_RIGHT = exports.ROTATE_RIGHT = 1;
 
-var moveTo = exports.moveTo = _ramda2.default.curry(function (block, x, y) {
+var moveTo = exports.moveTo = function moveTo(block, x, y) {
   return _extends({}, block, { x: x, y: y });
-});
+};
 
-var moveBy = exports.moveBy = _ramda2.default.curry(function (block, x, y) {
+var moveBy = exports.moveBy = function moveBy(block, x, y) {
   return _extends({}, block, {
     x: block.x + x,
     y: block.y + y
   });
-});
+};
 
 var getData = exports.getData = function getData(_ref2) {
   var type = _ref2.type;
@@ -24297,10 +24297,6 @@ Object.defineProperty(exports, "__esModule", {
   value: true
 });
 exports.clearLines = exports.clearLine = exports.isFull = exports.place = exports.checkAvailable = exports.set = exports.get = exports.isIn = exports.WALL = exports.EMPTY = undefined;
-
-var _ramda = require("ramda");
-
-var _ramda2 = _interopRequireDefault(_ramda);
 
 var _ground = require("../data/ground.json");
 
@@ -24330,25 +24326,25 @@ exports.default = function () {
   };
 };
 
-var isIn = exports.isIn = _ramda2.default.curry(function (ground, x, y) {
+var isIn = exports.isIn = function isIn(ground, x, y) {
   return x >= -P_LEFT && x < WIDTH + P_RIGHT && y >= -P_TOP && y < HEIGHT + P_BOTTOM;
-});
+};
 
-var get = exports.get = _ramda2.default.curry(function (ground, x, y) {
+var get = exports.get = function get(ground, x, y) {
   if (!isIn(ground, x, y)) {
     return WALL;
   }
   return ground.data[(P_TOP + y) * P_WIDTH + P_LEFT + x];
-});
+};
 
-var set = exports.set = _ramda2.default.curry(function (ground, x, y, type) {
+var set = exports.set = function set(ground, x, y, type) {
   if (!isIn(ground, x, y)) {
     return;
   }
   ground.data[(P_TOP + y) * P_WIDTH + P_LEFT + x] = type;
-});
+};
 
-var checkAvailable = exports.checkAvailable = _ramda2.default.curry(function (ground, block) {
+var checkAvailable = exports.checkAvailable = function checkAvailable(ground, block) {
   var data = (0, _block.getData)(block);
   for (var x = 0; x < data.size.width; x++) {
     for (var y = 0; y < data.size.height; y++) {
@@ -24358,9 +24354,9 @@ var checkAvailable = exports.checkAvailable = _ramda2.default.curry(function (gr
     }
   }
   return true;
-});
+};
 
-var place = exports.place = _ramda2.default.curry(function (ground, block) {
+var place = exports.place = function place(ground, block) {
   var data = (0, _block.getData)(block);
   for (var x = 0; x < data.size.width; x++) {
     for (var y = 0; y < data.size.height; y++) {
@@ -24369,18 +24365,18 @@ var place = exports.place = _ramda2.default.curry(function (ground, block) {
       }
     }
   }
-});
+};
 
-var isFull = exports.isFull = _ramda2.default.curry(function (ground, y) {
+var isFull = exports.isFull = function isFull(ground, y) {
   for (var x = -P_LEFT; x < WIDTH + P_RIGHT; x++) {
     if (get(ground, x, y) === EMPTY) {
       return false;
     }
   }
   return true;
-});
+};
 
-var clearLine = exports.clearLine = _ramda2.default.curry(function (ground, lineY) {
+var clearLine = exports.clearLine = function clearLine(ground, lineY) {
   for (var y = lineY; y > -P_TOP; y--) {
     for (var x = -P_LEFT; x < WIDTH + P_RIGHT; x++) {
       set(ground, x, y, get(ground, x, y - 1));
@@ -24389,18 +24385,17 @@ var clearLine = exports.clearLine = _ramda2.default.curry(function (ground, line
   for (var _x = -P_LEFT; _x < WIDTH + P_RIGHT; _x++) {
     set(ground, _x, -P_TOP, EMPTY);
   }
-});
+};
 
 var clearLines = exports.clearLines = function clearLines(ground) {
   for (var y = -P_TOP; y < HEIGHT + P_BOTTOM; y++) {
     if (isFull(ground, y)) {
-      console.log(y);
       clearLine(ground, y);
     }
   }
 };
 
-},{"../data/ground.json":389,"./block":399,"ramda":383}],401:[function(require,module,exports){
+},{"../data/ground.json":389,"./block":399}],401:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
