@@ -23147,10 +23147,6 @@ Object.defineProperty(exports, "__esModule", {
 
 var _createClass = function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; }();
 
-var _ramda = require("ramda");
-
-var _ramda2 = _interopRequireDefault(_ramda);
-
 var _engine = require("../data/engine.json");
 
 var _engine2 = _interopRequireDefault(_engine);
@@ -23192,7 +23188,10 @@ var Core = function () {
     this.hasHeld = false;
     this.showBlock = true;
     this.isLocked = false;
-    this.nexts = _ramda2.default.times(this.randomType.bind(this), _engine2.default.next);
+    this.nextBlocks = [];
+    for (var i = 0; i < _engine2.default.next; i++) {
+      this.nextBlocks.push(this.randomBlock());
+    }
   }
 
   _createClass(Core, [{
@@ -23201,23 +23200,33 @@ var Core = function () {
       return this.random.next(_block2.default.types.length);
     }
   }, {
+    key: "randomBlock",
+    value: function randomBlock() {
+      return (0, _block4.default)({
+        type: this.randomType()
+      });
+    }
+  }, {
+    key: "initializePosition",
+    value: function initializePosition() {
+      var data = (0, _block3.getData)(this.block);
+      this.block = (0, _block3.moveTo)(this.block, Math.floor((_ground2.default.size.width - data.size.width) / 2 + _block2.default.offset.x), Math.floor(-data.size.height / 2 + _block2.default.offset.y));
+    }
+  }, {
     key: "next",
     value: function next() {
-      var block = (0, _block4.default)({
-        type: _ramda2.default.head(this.nexts)
-      });
-      var data = (0, _block3.getData)(block);
-      this.block = (0, _block3.moveTo)(block, Math.floor((_ground2.default.size.width - data.size.width) / 2 + _block2.default.offset.x), Math.floor(-data.size.height / 2 + _block2.default.offset.y));
+      this.block = this.nextBlocks.shift();
+      this.initializePosition();
       this.hasHeld = false;
       this.showBlock = true;
       this.isLocked = false;
-      this.nexts = _ramda2.default.append(this.randomType(), _ramda2.default.tail(this.nexts));
+      this.nextBlocks.push(this.randomBlock());
       this.calculateMask();
     }
   }, {
     key: "calculateMask",
     value: function calculateMask() {
-      this.maskBlock = (0, _block3.clone)(this.block);
+      this.maskBlock = this.block;
       while (this.checkAvailable((0, _block3.moveBy)(this.maskBlock, 0, 1))) {
         this.maskBlock = (0, _block3.moveBy)(this.maskBlock, 0, 1);
       }
@@ -23231,11 +23240,14 @@ var Core = function () {
     key: "hold",
     value: function hold() {
       var nextBlock = this.holdBlock;
-      this.holdBlock = this.block;
+      this.holdBlock = (0, _block4.default)({
+        type: this.block.type
+      });
       this.block = nextBlock;
       if (!this.block) {
         this.next();
       } else {
+        this.initializePosition();
         this.calculateMask();
       }
       this.hasHeld = true;
@@ -23412,7 +23424,7 @@ var Core = function () {
 
 exports.default = Core;
 
-},{"../data/block.json":387,"../data/engine.json":388,"../data/ground.json":389,"../structs/block":399,"../structs/ground":400,"../utils/random":402,"ramda":383}],392:[function(require,module,exports){
+},{"../data/block.json":387,"../data/engine.json":388,"../data/ground.json":389,"../structs/block":399,"../structs/ground":400,"../utils/random":402}],392:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -24230,7 +24242,7 @@ exports.default = Renderer;
 Object.defineProperty(exports, "__esModule", {
   value: true
 });
-exports.getData = exports.moveBy = exports.moveTo = exports.ROTATE_RIGHT = exports.ROTATE_LEFT = exports.rotate = exports.clone = undefined;
+exports.getData = exports.moveBy = exports.moveTo = exports.ROTATE_RIGHT = exports.ROTATE_LEFT = exports.rotate = undefined;
 
 var _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; };
 
@@ -24267,10 +24279,6 @@ exports.default = function () {
   var _ref$y = _ref.y;
   var y = _ref$y === undefined ? 0 : _ref$y;
   return { type: type, rotate: rotate, x: x, y: y };
-};
-
-var clone = exports.clone = function clone(block) {
-  return _extends({}, block);
 };
 
 var rotate = exports.rotate = function rotate(block, direction) {
