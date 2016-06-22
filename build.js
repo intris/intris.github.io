@@ -23089,9 +23089,9 @@ module.exports={
 module.exports={
   "next": 3,
   "config": {
-    "arr": 7,
-    "das": 1,
-    "drop-das": 1,
+    "das": 7,
+    "arr": 1,
+    "drop-arr": 1,
     "delay": {
       "show": 0,
       "drop": 60,
@@ -23572,7 +23572,7 @@ var Engine = function () {
         case Key.MoveLeft:
         case Key.MoveRight:
           {
-            if (state.count >= config.arr && (state.count - config.arr) % config.das === 0 && state.count - state.previous >= config.das) {
+            if (state.count >= config.das && (state.count - config.das) % config.arr === 0 && state.count - state.previous >= config.arr) {
               return true;
             }
             if (state.count === 0 && state.previous !== state.count) {
@@ -23582,7 +23582,7 @@ var Engine = function () {
           }
         case Key.Drop:
           {
-            return state.count % config["drop-das"] === 0 && state.count - state.previous >= config["drop-das"];
+            return state.count % config["drop-arr"] === 0 && state.count - state.previous >= config["drop-arr"];
           }
       }
       return false;
