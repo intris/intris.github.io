@@ -23091,6 +23091,7 @@ module.exports={
   "config": {
     "arr": 7,
     "das": 1,
+    "drop-das": 1,
     "delay": {
       "show": 0,
       "drop": 60,
@@ -23581,7 +23582,7 @@ var Engine = function () {
           }
         case Key.Drop:
           {
-            return state.count % config.das === 0 && state.count - state.previous >= config.das;
+            return state.count % config["drop-das"] === 0 && state.count - state.previous >= config["drop-das"];
           }
       }
       return false;
@@ -23621,21 +23622,29 @@ var Engine = function () {
 
         case Key.RotateLeft:
           {
-            return core.tryRotateLeft();
+            var _result = void 0;
+            if (_result = core.tryRotateLeft()) {
+              this.state = State.CheckDrop;
+            }
+            return _result;
           }
 
         case Key.RotateRight:
           {
-            return core.tryRotateRight();
+            var _result2 = void 0;
+            if (_result2 = core.tryRotateRight()) {
+              this.state = State.CheckDrop;
+            }
+            return _result2;
           }
 
         case Key.Hold:
           {
-            var _result = void 0;
-            if (_result = core.canHold()) {
+            var _result3 = void 0;
+            if (_result3 = core.canHold()) {
               this.state = State.Hold;
             }
-            return _result;
+            return _result3;
           }
       }
       return false;
