@@ -28,7 +28,7 @@ var renderer = new _renderer2.default();
 
 game.run(renderer.render.bind(renderer));
 
-},{"./src/game":394,"./src/renderer":398,"core-js":5,"dom4":312,"loglevel":314,"whatwg-fetch":386}],2:[function(require,module,exports){
+},{"./src/game":395,"./src/renderer":399,"core-js":5,"dom4":312,"loglevel":314,"whatwg-fetch":386}],2:[function(require,module,exports){
 (function (global, factory) {
   if (typeof define === "function" && define.amd) {
     define('@most/create', ['exports', 'most', '@most/multicast'], factory);
@@ -23167,7 +23167,7 @@ var _ground3 = require("../structs/ground");
 
 var _ground4 = _interopRequireDefault(_ground3);
 
-var _random = require("../utils/random");
+var _random = require("./random");
 
 var _random2 = _interopRequireDefault(_random);
 
@@ -23175,9 +23175,9 @@ function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { de
 
 function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
 
-var Core = function () {
-  function Core() {
-    _classCallCheck(this, Core);
+var EngineCore = function () {
+  function EngineCore() {
+    _classCallCheck(this, EngineCore);
 
     this.random = new _random2.default();
 
@@ -23194,16 +23194,11 @@ var Core = function () {
     }
   }
 
-  _createClass(Core, [{
-    key: "randomType",
-    value: function randomType() {
-      return this.random.next(_block2.default.types.length);
-    }
-  }, {
+  _createClass(EngineCore, [{
     key: "randomBlock",
     value: function randomBlock() {
       return (0, _block4.default)({
-        type: this.randomType()
+        type: this.random.next()
       });
     }
   }, {
@@ -23419,12 +23414,12 @@ var Core = function () {
     }
   }]);
 
-  return Core;
+  return EngineCore;
 }();
 
-exports.default = Core;
+exports.default = EngineCore;
 
-},{"../data/block.json":387,"../data/engine.json":388,"../data/ground.json":389,"../structs/block":399,"../structs/ground":400,"../utils/random":402}],392:[function(require,module,exports){
+},{"../data/block.json":387,"../data/engine.json":388,"../data/ground.json":389,"../structs/block":400,"../structs/ground":401,"./random":394}],392:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -23996,6 +23991,74 @@ Object.defineProperty(exports, "__esModule", {
 
 var _createClass = function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; }();
 
+var _get = function get(object, property, receiver) { if (object === null) object = Function.prototype; var desc = Object.getOwnPropertyDescriptor(object, property); if (desc === undefined) { var parent = Object.getPrototypeOf(object); if (parent === null) { return undefined; } else { return get(parent, property, receiver); } } else if ("value" in desc) { return desc.value; } else { var getter = desc.get; if (getter === undefined) { return undefined; } return getter.call(receiver); } };
+
+var _random = require("../utils/random");
+
+var _random2 = _interopRequireDefault(_random);
+
+var _block = require("../data/block.json");
+
+var _block2 = _interopRequireDefault(_block);
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+
+function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
+
+function _possibleConstructorReturn(self, call) { if (!self) { throw new ReferenceError("this hasn't been initialised - super() hasn't been called"); } return call && (typeof call === "object" || typeof call === "function") ? call : self; }
+
+function _inherits(subClass, superClass) { if (typeof superClass !== "function" && superClass !== null) { throw new TypeError("Super expression must either be null or a function, not " + typeof superClass); } subClass.prototype = Object.create(superClass && superClass.prototype, { constructor: { value: subClass, enumerable: false, writable: true, configurable: true } }); if (superClass) Object.setPrototypeOf ? Object.setPrototypeOf(subClass, superClass) : subClass.__proto__ = superClass; }
+
+var EngineRandom = function (_Random) {
+  _inherits(EngineRandom, _Random);
+
+  function EngineRandom(seed) {
+    _classCallCheck(this, EngineRandom);
+
+    var _this = _possibleConstructorReturn(this, Object.getPrototypeOf(EngineRandom).call(this, seed));
+
+    _this.pack = [];
+    return _this;
+  }
+
+  _createClass(EngineRandom, [{
+    key: "nextPack",
+    value: function nextPack() {
+      for (var _i = 0; _i < _block2.default.types.length; _i++) {
+        this.pack.push(_i);
+      }
+      var i = this.pack.length;
+      while (--i) {
+        var j = _get(Object.getPrototypeOf(EngineRandom.prototype), "next", this).call(this, i + 1);
+        var _ref = [this.pack[j], this.pack[i]];
+        this.pack[i] = _ref[0];
+        this.pack[j] = _ref[1];
+      }
+    }
+  }, {
+    key: "next",
+    value: function next() {
+      if (!this.pack.length) {
+        this.nextPack();
+      }
+      return this.pack.shift();
+    }
+  }]);
+
+  return EngineRandom;
+}(_random2.default);
+
+exports.default = EngineRandom;
+
+},{"../data/block.json":387,"../utils/random":403}],395:[function(require,module,exports){
+"use strict";
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+
+var _createClass = function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; }();
+
 var _ramda = require("ramda");
 
 var _ramda2 = _interopRequireDefault(_ramda);
@@ -24071,7 +24134,7 @@ var Game = function () {
 
 exports.default = Game;
 
-},{"./data/engine.json":388,"./data/input.json":390,"./engine":393,"./input/keyboard":395,"./input/utils/key-mapper":396,"./input/utils/key-store":397,"./utils/storage":403,"./utils/ticker":404,"ramda":383}],395:[function(require,module,exports){
+},{"./data/engine.json":388,"./data/input.json":390,"./engine":393,"./input/keyboard":396,"./input/utils/key-mapper":397,"./input/utils/key-store":398,"./utils/storage":404,"./utils/ticker":405,"ramda":383}],396:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -24098,7 +24161,7 @@ exports.default = function (root) {
   }));
 };
 
-},{"most":381}],396:[function(require,module,exports){
+},{"most":381}],397:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -24120,7 +24183,7 @@ exports.default = _ramda2.default.curry(function (mapper, action) {
   }, action, mapper.map(_ramda2.default.invertObj)).filter(_ramda2.default.prop("key"));
 });
 
-},{"ramda":383}],397:[function(require,module,exports){
+},{"ramda":383}],398:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -24143,7 +24206,7 @@ exports.default = _ramda2.default.curry(function (keys, action) {
   }).startWith(state);
 });
 
-},{"ramda":383}],398:[function(require,module,exports){
+},{"ramda":383}],399:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -24236,7 +24299,7 @@ var Renderer = function () {
 
 exports.default = Renderer;
 
-},{"./data/ground.json":389,"./structs/block":399,"./structs/ground":400}],399:[function(require,module,exports){
+},{"./data/ground.json":389,"./structs/block":400,"./structs/ground":401}],400:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -24307,7 +24370,7 @@ var getData = exports.getData = function getData(_ref2) {
   return types[type][rotate];
 };
 
-},{"../data/block.json":387,"../utils/matrix":401,"ramda":383}],400:[function(require,module,exports){
+},{"../data/block.json":387,"../utils/matrix":402,"ramda":383}],401:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -24412,7 +24475,7 @@ var clearLines = exports.clearLines = function clearLines(ground) {
   }
 };
 
-},{"../data/ground.json":389,"./block":399}],401:[function(require,module,exports){
+},{"../data/ground.json":389,"./block":400}],402:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -24428,7 +24491,7 @@ function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { de
 
 var rotate = exports.rotate = _ramda2.default.compose(_ramda2.default.map(_ramda2.default.reverse), _ramda2.default.transpose);
 
-},{"ramda":383}],402:[function(require,module,exports){
+},{"ramda":383}],403:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -24467,7 +24530,7 @@ var Random = function () {
 
 exports.default = Random;
 
-},{"mersennetwister":315}],403:[function(require,module,exports){
+},{"mersennetwister":315}],404:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -24552,7 +24615,7 @@ System.global.storage = storage;
 
 exports.default = storage;
 
-},{"events":313,"most":381,"ramda":383}],404:[function(require,module,exports){
+},{"events":313,"most":381,"ramda":383}],405:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
